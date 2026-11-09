@@ -4,11 +4,18 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 POLICY_URL = os.getenv("POLICY_URL", "http://localhost:8001")
 NOTIFY_URL = os.getenv("NOTIFY_URL", "http://localhost:8003")
 app = FastAPI(title="Billing Service")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # prototype only; restrict to the dashboard origin in production
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # In-memory store for Phase 1. Replaced by DynamoDB in the AWS phase.
 SALES: dict[str, dict] = {}

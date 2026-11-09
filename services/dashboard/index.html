@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retail Autonomy - Owner Dashboard</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+  header { background: #111827; color: #fff; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 18px; margin: 0; }
+  #conn { font-size: 13px; }
+  main { max-width: 1100px; margin: 20px auto; padding: 0 16px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .card .label { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 26px; font-weight: 600; margin-top: 6px; }
+  .panel { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 20px; }
+  .panel h2 { font-size: 15px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+  .row label { font-size: 12px; color: #6b7280; display: flex; flex-direction: column; gap: 4px; }
+  input, select { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; }
+  button { padding: 9px 16px; background: #2563eb; color: #fff; border: 0; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  button:hover { background: #1d4ed8; }
+  #msg { margin-top: 10px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e5e7eb; }
+  th { font-size: 12px; color: #6b7280; text-transform: uppercase; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .completed { background: #dcfce7; color: #166534; }
+  .pending_approval { background: #fef3c7; color: #92400e; }
+  .rejected { background: #fee2e2; color: #991b1b; }
+  .empty { color: #6b7280; padding: 16px 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Retail Autonomy - Owner Dashboard</h1>
+  <span id="conn">Connecting...</span>
+</header>
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">Sales value (completed)</div><div class="value" id="c-total">-</div></div>
+    <div class="card"><div class="label">Discount given</div><div class="value" id="c-disc">-</div></div>
+    <div class="card"><div class="label">Pending approvals</div><div class="value" id="c-pending">-</div></div>
+    <div class="card"><div class="label">Rejected</div><div class="value" id="c-rejected">-</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>New sale (employee view)</h2>
+    <div class="row">
+      <label>Employee <input id="f-emp" value="Ravi"></label>
+      <label>Item <input id="f-name" value="Galaxy A15"></label>
+      <label>Category
+        <select id="f-cat">
+          <option value="phone">phone</option>
+          <option value="accessory">accessory</option>
+          <option value="appliance">appliance</option>
+        </select>
+      </label>
+      <label>Price (Rs) <input id="f-price" type="number" value="15000" min="1"></label>
+      <label>Qty <input id="f-qty" type="number" value="1" min="1" style="width:70px"></label>
+      <label>Discount % <input id="f-disc" type="number" value="10" min="0" max="100" style="width:90px"></label>
+      <button onclick="createSale()">Create sale</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Recent sales</h2>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Employee</th><th>Items</th><th>Discount</th><th>Total</th><th>Status</th><th>Policy note</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const API = "http://localhost:8002";
+  const inr = (n) => "Rs " + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  function cell(tr, text) {
+    const td = document.createElement("td");
+    td.textContent = text;
+    tr.appendChild(td);
+    return td;
+  }
+
+  function render(sales) {
+    const done = sales.filter(s => s.status === "completed");
+    document.getElementById("c-total").textContent = inr(done.reduce((a, s) => a + s.total, 0));
+    document.getElementById("c-disc").textContent = inr(done.reduce((a, s) => a + s.discount_amount, 0));
+    document.getElementById("c-pending").textContent = sales.filter(s => s.status === "pending_approval").length;
+    document.getElementById("c-rejected").textContent = sales.filter(s => s.status === "rejected").length;
+
+    const body = document.getElementById("rows");
+    body.textContent = "";
+    if (sales.length === 0) {
+      const tr = document.createElement("tr");
+      const td = cell(tr, "No sales yet. Create one above.");
+      td.colSpan = 7;
+      td.className = "empty";
+      body.appendChild(tr);
+      return;
+    }
+    sales.sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 15).forEach(s => {
+      const tr = document.createElement("tr");
+      cell(tr, new Date(s.created_at).toLocaleTimeString());
+      cell(tr, s.employee);
+      cell(tr, s.items.map(i => i.qty + " x " + i.name).join(", "));
+      cell(tr, s.discount_percent + "%");
+      cell(tr, inr(s.total));
+      const st = cell(tr, "");
+      const b = document.createElement("span");
+      b.className = "badge " + s.status;
+      b.textContent = s.status.replace("_", " ");
+      st.appendChild(b);
+      cell(tr, s.policy_reason);
+      body.appendChild(tr);
+    });
+  }
+
+  async function load() {
+    const conn = document.getElementById("conn");
+    try {
+      const r = await fetch(API + "/sales");
+      render(await r.json());
+      conn.textContent = "Live - updated " + new Date().toLocaleTimeString();
+    } catch (e) {
+      conn.textContent = "Billing service unreachable";
+    }
+  }
+
+  async function createSale() {
+    const msg = document.getElementById("msg");
+    const payload = {
+      shop_id: "shop1",
+      outlet_id: "main",
+      employee: document.getElementById("f-emp").value,
+      items: [{
+        name: document.getElementById("f-name").value,
+        category: document.getElementById("f-cat").value,
+        price: parseFloat(document.getElementById("f-price").value),
+        qty: parseInt(document.getElementById("f-qty").value, 10)
+      }],
+      discount_percent: parseFloat(document.getElementById("f-disc").value)
+    };
+    try {
+      const r = await fetch(API + "/sales", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!r.ok) { msg.textContent = "Error: " + r.status; return; }
+      const s = await r.json();
+      msg.textContent = "Result: " + s.status.replace("_", " ") + " - " + s.policy_reason;
+      load();
+    } catch (e) {
+      msg.textContent = "Could not reach billing service";
+    }
+  }
+
+  load();
+  setInterval(load, 3000);
+</script>
+</body>
+</html>

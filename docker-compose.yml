@@ -23,3 +23,10 @@ services:
       - .env
     environment:
       - BILLING_URL=http://billing-service:8002
+
+  dashboard:
+    build: ./services/dashboard
+    ports:
+      - "8080:80"
+    depends_on:
+      - billing-service
