@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Create dummy env file
+        run: |
+          echo "TELEGRAM_BOT_TOKEN=dummy" > .env
+          echo "TELEGRAM_CHAT_ID=1" >> .env
+
+      - name: Build images and start the system
+        run: docker compose up --build -d
+
+      - name: Wait for billing service
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8002/health; then exit 0; fi
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+
+      - name: Smoke test discount rules
+        run: |
+          sale() {
+            curl -sf -X POST http://localhost:8002/sales \
+              -H "Content-Type: application/json" \
+              -d "{\"shop_id\":\"shop1\",\"outlet_id\":\"main\",\"employee\":\"CI\",\"items\":[{\"name\":\"Phone\",\"category\":\"phone\",\"price\":15000,\"qty\":1}],\"discount_percent\":$1}" \
+              | jq -r .status
+          }
+          check() {
+            result=$(sale "$1")
+            echo "discount $1% -> $result (expected $2)"
+            [ "$result" = "$2" ]
+          }
+          check 3 completed
+          check 10 pending_approval
+          check 20 rejected
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop the system
+        if: always()
+        run: docker compose down
