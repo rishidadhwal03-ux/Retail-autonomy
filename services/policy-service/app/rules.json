@@ -1,0 +1,8 @@
+{
+  "default": { "auto_approve_max": 3, "hard_max": 10 },
+  "categories": {
+    "phone": { "auto_approve_max": 5, "hard_max": 12 },
+    "accessory": { "auto_approve_max": 15, "hard_max": 30 },
+    "appliance": { "auto_approve_max": 4, "hard_max": 10 }
+  }
+}

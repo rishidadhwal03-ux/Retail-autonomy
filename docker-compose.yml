@@ -1,0 +1,25 @@
+services:
+  policy-service:
+    build: ./services/policy-service
+    ports:
+      - "8001:8001"
+
+  billing-service:
+    build: ./services/billing-service
+    ports:
+      - "8002:8002"
+    environment:
+      - POLICY_URL=http://policy-service:8001
+      - NOTIFY_URL=http://notification-service:8003
+    depends_on:
+      - policy-service
+      - notification-service
+
+  notification-service:
+    build: ./services/notification-service
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    environment:
+      - BILLING_URL=http://billing-service:8002
