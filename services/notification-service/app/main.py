@@ -44,6 +44,25 @@ async def handle_button(client: httpx.AsyncClient, cb: dict):
     })
 
 
+async def send_summary(client: httpx.AsyncClient, chat_id: int):
+    r = await client.get(f"{BILLING_URL}/sales")
+    sales = r.json()
+    done = [s for s in sales if s["status"] == "completed"]
+    pending = [s for s in sales if s["status"] == "pending_approval"]
+    rejected = [s for s in sales if s["status"] == "rejected"]
+    text = (
+        "📊 Shop summary\n\n"
+        f"Completed sales: {len(done)} (₹{sum(s['total'] for s in done):,.2f})\n"
+        f"Discount given: ₹{sum(s['discount_amount'] for s in done):,.2f}\n"
+        f"Pending approvals: {len(pending)}\n"
+        f"Rejected: {len(rejected)}"
+    )
+    if done:
+        top = max(done, key=lambda s: s["discount_percent"])
+        text += f"\n\nHighest discount: {top['discount_percent']}% by {top['employee']}"
+    await client.post(f"{API}/sendMessage", json={"chat_id": chat_id, "text": text})
+
+
 async def poll_telegram():
     offset = 0
     async with httpx.AsyncClient(timeout=40) as client:
@@ -52,12 +71,17 @@ async def poll_telegram():
                 r = await client.get(f"{API}/getUpdates", params={
                     "offset": offset,
                     "timeout": 25,
-                    "allowed_updates": json.dumps(["callback_query"]),
+                    "allowed_updates": json.dumps(["callback_query", "message"]),
                 })
                 for update in r.json().get("result", []):
                     offset = update["update_id"] + 1
                     if "callback_query" in update:
                         await handle_button(client, update["callback_query"])
+                    elif "message" in update:
+                        msg = update["message"]
+                        text = msg.get("text", "").strip().lower()
+                        if msg["from"]["id"] == OWNER_CHAT_ID and text == "/summary":
+                            await send_summary(client, msg["chat"]["id"])
             except Exception as e:
                 print(f"poll error: {e}", flush=True)
                 await asyncio.sleep(3)
