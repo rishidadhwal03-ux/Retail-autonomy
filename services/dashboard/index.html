@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Retail Autonomy - Owner Dashboard</title>
+<title>Retail Autonomy - shop console</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: Segoe UI, Arial, sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
@@ -31,54 +31,73 @@
   .pending_approval { background: #fef3c7; color: #92400e; }
   .rejected { background: #fee2e2; color: #991b1b; }
   .empty { color: #6b7280; padding: 16px 8px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tab { background: #e5e7eb; color: #111827; }
+  .tab:hover { background: #d1d5db; }
+  .tab.active { background: #2563eb; color: #fff; }
+    .mine { padding: 10px; border-radius: 6px; margin-bottom: 8px; font-size: 14px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Retail Autonomy - Owner Dashboard</h1>
+  <h1>Retail Autonomy - shop console</h1>
   <span id="conn">Connecting...</span>
 </header>
 <main>
-  <div class="cards">
-    <div class="card"><div class="label">Sales value (completed)</div><div class="value" id="c-total">-</div></div>
-    <div class="card"><div class="label">Discount given</div><div class="value" id="c-disc">-</div></div>
-    <div class="card"><div class="label">Pending approvals</div><div class="value" id="c-pending">-</div></div>
-    <div class="card"><div class="label">Rejected</div><div class="value" id="c-rejected">-</div></div>
+  <div class="tabs">
+    <button id="tab-emp" class="tab active" onclick="showView('emp')">Employee: Billing counter</button>
+    <button id="tab-own" class="tab" onclick="showView('own')">Owner: Overview</button>
   </div>
 
-  <div class="panel">
-    <h2>New sale (employee view)</h2>
-    <div class="row">
-      <label>Employee <input id="f-emp" value="Ravi"></label>
-      <label>Item <input id="f-name" value="Galaxy A15"></label>
-      <label>Category
-        <select id="f-cat">
-          <option value="phone">phone</option>
-          <option value="accessory">accessory</option>
-          <option value="appliance">appliance</option>
-        </select>
-      </label>
-      <label>Price (Rs) <input id="f-price" type="number" value="15000" min="1"></label>
-      <label>Qty <input id="f-qty" type="number" value="1" min="1" style="width:70px"></label>
-      <label>Discount % <input id="f-disc" type="number" value="10" min="0" max="100" style="width:90px"></label>
-      <button onclick="createSale()">Create sale</button>
+  <div id="view-emp">
+    <div class="panel">
+      <h2>New sale</h2>
+      <div class="row">
+        <label>Employee <input id="f-emp" value="Ravi"></label>
+        <label>Item <input id="f-name" value="Galaxy A15"></label>
+        <label>Category
+          <select id="f-cat">
+            <option value="phone">phone</option>
+            <option value="accessory">accessory</option>
+            <option value="appliance">appliance</option>
+          </select>
+        </label>
+        <label>Price (Rs) <input id="f-price" type="number" value="15000" min="1"></label>
+        <label>Qty <input id="f-qty" type="number" value="1" min="1" style="width:70px"></label>
+        <label>Discount % <input id="f-disc" type="number" value="10" min="0" max="100" style="width:90px"></label>
+        <button onclick="createSale()">Create sale</button>
+      </div>
+            <div id="msg"></div>
     </div>
-    <div id="msg"></div>
+    <div class="panel">
+      <h2>Your sales</h2>
+      <div id="my-sales" class="empty">No sales yet.</div>
+    </div>
   </div>
 
-  <div class="panel">
-    <h2>Recent sales</h2>
-    <table>
-      <thead>
-        <tr><th>Time</th><th>Employee</th><th>Items</th><th>Discount</th><th>Total</th><th>Status</th><th>Policy note</th></tr>
-      </thead>
-      <tbody id="rows"></tbody>
-    </table>
+  <div id="view-own" style="display:none">
+    <div class="cards">
+      <div class="card"><div class="label">Sales value (completed)</div><div class="value" id="c-total">-</div></div>
+      <div class="card"><div class="label">Discount given</div><div class="value" id="c-disc">-</div></div>
+      <div class="card"><div class="label">Pending approvals</div><div class="value" id="c-pending">-</div></div>
+      <div class="card"><div class="label">Rejected</div><div class="value" id="c-rejected">-</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Recent sales</h2>
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Employee</th><th>Items</th><th>Discount</th><th>Total</th><th>Status</th><th>Policy note</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
   </div>
 </main>
 
 <script>
   const API = "http://localhost:8002";
+    const mySaleIds = [];
   const inr = (n) => "Rs " + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
   function cell(tr, text) {
@@ -88,7 +107,30 @@
     return td;
   }
 
+    function statusText(s) {
+    if (s.status === "completed") {
+      return s.decided_by === "owner" ? "✅ Approved by owner" : "✅ Auto-approved (within shop rules)";
+    }
+    if (s.status === "pending_approval") return "⏳ Waiting for owner approval...";
+    return s.decided_by === "owner" ? "❌ Rejected by owner" : "❌ Not allowed by shop rules";
+  }
+
+  function renderMine(sales) {
+    const box = document.getElementById("my-sales");
+    box.textContent = "";
+    const mine = mySaleIds.map(id => sales.find(s => s.sale_id === id)).filter(Boolean);
+    if (mine.length === 0) { box.textContent = "No sales yet."; return; }
+    mine.slice(0, 5).forEach(s => {
+      const line = document.createElement("div");
+      line.className = "mine " + s.status;
+      line.textContent = s.items.map(i => i.qty + " x " + i.name).join(", ") +
+        " - " + inr(s.total) + " (" + s.discount_percent + "% off): " + statusText(s);
+      box.appendChild(line);
+    });
+  }
+
   function render(sales) {
+    renderMine(sales);
     const done = sales.filter(s => s.status === "completed");
     document.getElementById("c-total").textContent = inr(done.reduce((a, s) => a + s.total, 0));
     document.getElementById("c-disc").textContent = inr(done.reduce((a, s) => a + s.discount_amount, 0));
@@ -155,11 +197,19 @@
       });
       if (!r.ok) { msg.textContent = "Error: " + r.status; return; }
       const s = await r.json();
+            mySaleIds.unshift(s.sale_id);
       msg.textContent = "Result: " + s.status.replace("_", " ") + " - " + s.policy_reason;
       load();
     } catch (e) {
       msg.textContent = "Could not reach billing service";
     }
+  }
+
+    function showView(v) {
+    document.getElementById("view-emp").style.display = v === "emp" ? "block" : "none";
+    document.getElementById("view-own").style.display = v === "own" ? "block" : "none";
+    document.getElementById("tab-emp").classList.toggle("active", v === "emp");
+    document.getElementById("tab-own").classList.toggle("active", v === "own");
   }
 
   load();
