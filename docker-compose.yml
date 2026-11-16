@@ -11,6 +11,8 @@ services:
     environment:
       - POLICY_URL=http://policy-service:8001
       - NOTIFY_URL=http://notification-service:8003
+    volumes:
+      - billing-data:/data
     depends_on:
       - policy-service
       - notification-service
@@ -30,3 +32,6 @@ services:
       - "8080:80"
     depends_on:
       - billing-service
+
+volumes:
+  billing-data:

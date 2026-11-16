@@ -1,4 +1,6 @@
 import os
+import json
+from pathlib import Path
 import uuid
 from datetime import datetime, timezone
 
@@ -17,8 +19,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store for Phase 1. Replaced by DynamoDB in the AWS phase.
-SALES: dict[str, dict] = {}
+# File-backed store on a Docker volume so sales survive restarts and redeploys.
+# At scale this would be replaced by a managed database such as DynamoDB.
+DATA_FILE = Path(os.getenv("DATA_FILE", "/data/sales.json"))
+DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+
+def load_sales() -> dict[str, dict]:
+    if DATA_FILE.exists():
+        try:
+            return json.loads(DATA_FILE.read_text())
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def save_sales() -> None:
+    tmp = DATA_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(SALES))
+    tmp.replace(DATA_FILE)  # atomic swap so a crash can't leave a half-written file
+
+
+SALES: dict[str, dict] = load_sales()
 
 STATUS_MAP = {
     "auto_approved": "completed",
@@ -86,6 +108,7 @@ def create_sale(req: SaleRequest):
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     SALES[sale["sale_id"]] = sale
+    save_sales()
 
     if sale["status"] == "pending_approval":
         try:
@@ -133,4 +156,5 @@ def decide_sale(sale_id: str, decision: Decision):
         raise HTTPException(status_code=409, detail="Sale is not awaiting approval")
     sale["status"] = "completed" if decision.approved else "rejected"
     sale["decided_by"] = decision.decided_by
+    save_sales()
     return sale
