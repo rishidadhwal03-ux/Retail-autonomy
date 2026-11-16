@@ -96,7 +96,7 @@
 </main>
 
 <script>
-  const API = "http://localhost:8002";
+  const API = "http://" + window.location.hostname + ":8002";
     const mySaleIds = [];
   const inr = (n) => "Rs " + Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
